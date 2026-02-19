@@ -1,0 +1,31 @@
+{
+  "name": "customer-success-pulse",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Customer Success Pulse Dashboard with Tenant Management",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/customer-success-pulse.git"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@clerk/clerk-react": "^5.0.0",
+    "@vercel/postgres": "^0.5.0",
+    "papaparse": "^5.4.1",
+    "recharts": "^3.7.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "lucide-react": "^0.574.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
