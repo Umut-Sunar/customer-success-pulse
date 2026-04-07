@@ -102,9 +102,30 @@ export default defineConfig(({ mode }) => {
     const allowLocalhost = env.ALLOW_LOCALHOST === 'true' || mode === 'development';
     
     return {
+      build: {
+        chunkSizeWarningLimit: 1000,
+      },
       server: {
         port: 3000,
         host: '0.0.0.0',
+        // Development mode'da API routes'ları için proxy
+        // API isteklerini local API server'a (port 3001) yönlendir
+        proxy: {
+          '/api': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+            secure: false,
+            // Preserve Content-Type header for multipart/form-data
+            configure: (proxy, _options) => {
+              proxy.on('proxyReq', (proxyReq, req, _res) => {
+                // Preserve original Content-Type header
+                if (req.headers['content-type']) {
+                  proxyReq.setHeader('Content-Type', req.headers['content-type']);
+                }
+              });
+            },
+          },
+        },
       },
       plugins: [
         react(),
@@ -113,7 +134,28 @@ export default defineConfig(({ mode }) => {
           configureServer(server) {
             server.middlewares.use(createIpWhitelistMiddleware(allowedIP, allowLocalhost));
           }
-        }
+        },
+        {
+          name: 'warn-local-api',
+          configureServer(server) {
+            server.httpServer?.once('listening', () => {
+              const apiPort = 3001;
+              const healthUrl = `http://127.0.0.1:${apiPort}/api/health`;
+              setTimeout(() => {
+                fetch(healthUrl)
+                  .then((r) => {
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                  })
+                  .catch(() => {
+                    console.warn(
+                      `[vite] Local API not reachable at ${healthUrl}. ` +
+                        `Start the API with \`npm run dev:api\` or use \`npm run dev:full\`.`
+                    );
+                  });
+              }, 600);
+            });
+          },
+        },
       ],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

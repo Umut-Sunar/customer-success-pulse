@@ -1,22 +1,43 @@
-import React, { useState } from 'react';
-import { LayoutDashboard, Users, Bell, Settings, LogOut, Shield } from 'lucide-react';
-import { useUser } from '@clerk/clerk-react';
+import React, { useState, useEffect } from 'react';
+import { LayoutDashboard, Users, Bell, Settings, LogOut, Shield, Brain, ShoppingBag, UploadCloud, Trash2 } from 'lucide-react';
+import { useUser, useClerk } from '@clerk/clerk-react';
 import { DashboardOverview } from './components/DashboardOverview';
-import { CustomerTable } from './components/CustomerTable';
-import { CustomerDetail } from './components/CustomerDetail';
+import { AccountTable } from './components/AccountTable';
+import { AccountDetail } from './components/AccountDetail';
 import { AdminPanel } from './components/admin/AdminPanel';
 import { SignIn } from './components/SignIn';
 import { useEmailDomainCheck } from './hooks/useEmailDomainCheck';
 import { useAdminAccess } from './hooks/useAdminAccess';
-import { MOCK_CUSTOMERS } from './constants';
-import { Customer } from './types';
+import type { EnrichedAccount } from './hooks/useEnrichedAccounts';
+import { DataUploadModal } from './src/components/shared/DataUploadModal';
+import { ErrorBoundary } from './src/components/shared/ErrorBoundary';
+import { MeetingIntelligenceLayout } from './src/components/meeting-intelligence/MeetingIntelligenceLayout';
+import { SalesOrdersLayout } from './src/components/sales/SalesOrdersLayout';
+import { useDataStore, hydrateFromIndexedDB } from './src/store/dataStore';
 
 const App: React.FC = () => {
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'accounts' | 'admin'>('dashboard');
-  const { user, signOut } = useUser();
+  const [selectedAccount, setSelectedAccount] = useState<EnrichedAccount | null>(null);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'accounts' | 'meeting-intel' | 'sales-orders' | 'admin'>('dashboard');
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [meetingIntelTab, setMeetingIntelTab] = useState<'overview' | 'pm' | 'customer' | 'risk' | 'knowledge'>('overview');
+  const { user } = useUser();
+  const { signOut } = useClerk();
   const { isEmailAllowed } = useEmailDomainCheck();
   const { isAdmin } = useAdminAccess();
+  const uploadedFiles = useDataStore((s) => s.uploadedFiles);
+  const clearAllData = useDataStore((s) => s.clearAllData);
+  const isHydrated = useDataStore((s) => s.isHydrated);
+  const hasUploadedFiles = Object.keys(uploadedFiles).length > 0;
+
+  useEffect(() => {
+    const storeState = useDataStore.getState();
+    hydrateFromIndexedDB(storeState).catch(console.error);
+  }, []);
+  const riskSignals = useDataStore((s) => s.riskSignals);
+  const pipelineOrders = useDataStore((s) => s.pipelineOrders);
+  const hasHighChurnRisk = riskSignals.some((r) => r.churn_risk === 'high');
+  const today = new Date().toISOString().slice(0, 10);
+  const overduePipelineCount = pipelineOrders.filter((o) => o.due_date && o.due_date < today).length;
 
   // Show sign in if not authenticated or email domain not allowed
   if (!user || !isEmailAllowed()) {
@@ -49,6 +70,28 @@ const App: React.FC = () => {
             <Users size={20} />
             All Accounts
           </button>
+          <button 
+            onClick={() => setActiveTab('meeting-intel')}
+            className={`relative w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'meeting-intel' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+          >
+            <Brain size={20} />
+            Meeting Intel
+            {hasHighChurnRisk && (
+              <span className="absolute top-2 right-3 h-2.5 w-2.5 rounded-full bg-red-500" aria-label="High churn risk" />
+            )}
+          </button>
+          <button 
+            onClick={() => setActiveTab('sales-orders')}
+            className={`relative w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'sales-orders' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+          >
+            <ShoppingBag size={20} />
+            Sales Orders
+            {overduePipelineCount > 0 && (
+              <span className="absolute top-1/2 right-3 -translate-y-1/2 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+                {overduePipelineCount}
+              </span>
+            )}
+          </button>
           {isAdmin && (
             <button 
               onClick={() => setActiveTab('admin')}
@@ -70,16 +113,51 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
+        {!isHydrated && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800">
+            Loading saved data...
+          </div>
+        )}
         <header className="bg-white border-b border-slate-100 p-6 flex justify-between items-center sticky top-0 z-30">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">
-              {activeTab === 'dashboard' ? 'Weekly Overview' : 'Customer Accounts'}
+              {activeTab === 'dashboard' && 'Weekly Overview'}
+              {activeTab === 'accounts' && 'Customer Accounts'}
+              {activeTab === 'meeting-intel' && 'Meeting Intelligence'}
+              {activeTab === 'sales-orders' && 'Sales Orders'}
+              {activeTab === 'admin' && 'Admin'}
             </h1>
             <p className="text-slate-500 text-sm">
               Welcome back, {user?.firstName || user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'User'}.
             </p>
           </div>
           <div className="flex items-center gap-4">
+             {hasUploadedFiles && (
+               <button
+                 type="button"
+                 onClick={() => {
+                   if (window.confirm('Clear all uploaded CSV data from this device? This cannot be undone.')) {
+                     clearAllData();
+                     window.location.reload();
+                   }
+                 }}
+                 className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-red-50 hover:border-red-200 hover:text-red-700"
+               >
+                 <Trash2 size={18} />
+                 Clear Data
+               </button>
+             )}
+             <button
+               type="button"
+               onClick={() => setUploadModalOpen(true)}
+               className="relative flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+             >
+               <UploadCloud size={18} />
+               Update Data
+               {hasUploadedFiles && (
+                 <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-green-500" aria-hidden />
+               )}
+             </button>
              <button className="relative p-2 text-slate-400 hover:text-slate-600">
                <Bell size={20} />
                <span className="absolute top-1 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
@@ -111,16 +189,41 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <div className="p-6 max-w-7xl mx-auto space-y-8">
+        <div
+          className={`p-6 space-y-8 ${
+            activeTab === 'sales-orders' ? 'max-w-none w-full mx-auto' : 'max-w-7xl mx-auto'
+          }`}
+        >
           {activeTab === 'dashboard' && (
             <>
-              <DashboardOverview customers={MOCK_CUSTOMERS} />
-              <CustomerTable customers={MOCK_CUSTOMERS} onSelectCustomer={setSelectedCustomer} />
+              <DashboardOverview
+                onNavigateToRisk={() => {
+                  setActiveTab('meeting-intel');
+                  setMeetingIntelTab('risk');
+                }}
+              />
+              <AccountTable onSelectAccount={setSelectedAccount} />
             </>
           )}
 
           {activeTab === 'accounts' && (
-             <CustomerTable customers={MOCK_CUSTOMERS} onSelectCustomer={setSelectedCustomer} />
+             <AccountTable onSelectAccount={setSelectedAccount} />
+          )}
+
+          {activeTab === 'meeting-intel' && (
+            <ErrorBoundary onRetry={clearAllData}>
+              <MeetingIntelligenceLayout
+                onOpenUploadModal={() => setUploadModalOpen(true)}
+                selectedTab={meetingIntelTab}
+                onTabChange={setMeetingIntelTab}
+              />
+            </ErrorBoundary>
+          )}
+
+          {activeTab === 'sales-orders' && (
+            <ErrorBoundary onRetry={clearAllData}>
+              <SalesOrdersLayout onOpenUploadModal={() => setUploadModalOpen(true)} />
+            </ErrorBoundary>
           )}
 
           {activeTab === 'admin' && isAdmin && (
@@ -130,12 +233,14 @@ const App: React.FC = () => {
       </main>
 
       {/* Detail Modal/Slide-over */}
-      {selectedCustomer && (
-        <CustomerDetail 
-          customer={selectedCustomer} 
-          onClose={() => setSelectedCustomer(null)} 
+      {selectedAccount && (
+        <AccountDetail
+          account={selectedAccount}
+          onClose={() => setSelectedAccount(null)}
         />
       )}
+
+      <DataUploadModal open={uploadModalOpen} onClose={() => setUploadModalOpen(false)} />
     </div>
   );
 };

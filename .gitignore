@@ -29,3 +29,10 @@ dist-ssr
 .env
 .env.production
 .env.development
+
+# SQLite database file
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+tenant-data.db

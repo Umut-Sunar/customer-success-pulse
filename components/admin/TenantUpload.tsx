@@ -45,12 +45,43 @@ export const TenantUpload: React.FC<TenantUploadProps> = ({ onImportComplete }) 
         body: formData,
       });
 
+      // Check if response has content before parsing JSON
+      const contentType = response.headers.get('content-type');
+      const text = await response.text();
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to import tenants');
+        let errorMessage = 'Failed to import tenants';
+        try {
+          if (text && contentType?.includes('application/json')) {
+            const errorData = JSON.parse(text);
+            errorMessage = errorData.error || errorMessage;
+          } else if (text) {
+            errorMessage = text;
+          } else {
+            errorMessage = response.statusText || errorMessage;
+          }
+        } catch (e) {
+          // If JSON parse fails, use the text or status text
+          errorMessage = text || response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
-      const importResult: TenantImportResult = await response.json();
+      // Parse JSON response
+      let importResult: TenantImportResult;
+      try {
+        if (text && contentType?.includes('application/json')) {
+          importResult = JSON.parse(text);
+        } else if (text) {
+          // Try to parse anyway
+          importResult = JSON.parse(text);
+        } else {
+          throw new Error('Empty response from server');
+        }
+      } catch (e) {
+        throw new Error('Invalid response from server. Please try again.');
+      }
+      
       setResult(importResult);
       
       if (importResult.newTenants > 0) {
@@ -132,13 +163,45 @@ export const TenantUpload: React.FC<TenantUploadProps> = ({ onImportComplete }) 
                   <p>New tenants added: {result.newTenants}</p>
                   <p>Duplicates skipped: {result.skippedDuplicates}</p>
                   {result.errors.length > 0 && (
-                    <div className="mt-2">
-                      <p className="font-medium">Errors:</p>
-                      <ul className="list-disc list-inside ml-2">
-                        {result.errors.map((err, idx) => (
-                          <li key={idx}>{err}</li>
-                        ))}
-                      </ul>
+                    <div className="mt-3">
+                      <p className="font-medium mb-2">Errors ({result.errors.length}):</p>
+                      <div className="bg-white rounded border border-emerald-200 max-h-60 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50 sticky top-0">
+                            <tr>
+                              <th className="px-3 py-2 text-left text-slate-600 font-semibold">Row</th>
+                              <th className="px-3 py-2 text-left text-slate-600 font-semibold">Error</th>
+                              <th className="px-3 py-2 text-left text-slate-600 font-semibold">Available Data</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {result.errors.map((err, idx) => {
+                              // Parse error message: "Row X: Error - Data..."
+                              const match = err.match(/^Row (\d+): (.+?)(?: - (.+))?$/);
+                              if (match) {
+                                const [, rowNum, errorMsg, dataInfo] = match;
+                                return (
+                                  <tr key={idx} className="hover:bg-slate-50">
+                                    <td className="px-3 py-2 font-mono text-slate-700">{rowNum}</td>
+                                    <td className="px-3 py-2 text-red-600">{errorMsg}</td>
+                                    <td className="px-3 py-2 text-slate-600 text-xs">
+                                      {dataInfo || <span className="text-slate-400 italic">No data</span>}
+                                    </td>
+                                  </tr>
+                                );
+                              }
+                              // Fallback for non-parsed errors
+                              return (
+                                <tr key={idx} className="hover:bg-slate-50">
+                                  <td className="px-3 py-2" colSpan={3}>
+                                    <span className="text-red-600">{err}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>

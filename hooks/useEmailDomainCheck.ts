@@ -1,10 +1,11 @@
-import { useUser } from '@clerk/clerk-react';
+import { useUser, useClerk } from '@clerk/clerk-react';
 import { useEffect, useState } from 'react';
 
 const ALLOWED_EMAIL_DOMAINS = ['@alo-tech.com', '@callcenterstudio.com'];
 
 export const useEmailDomainCheck = () => {
-  const { user, isLoaded, signOut } = useUser();
+  const { user, isLoaded } = useUser();
+  const { signOut } = useClerk();
   const [isAllowed, setIsAllowed] = useState(false);
 
   useEffect(() => {

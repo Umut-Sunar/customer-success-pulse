@@ -1,7 +1,8 @@
-import { sql } from '../../lib/db';
+import { sql, ensureDatabaseInitialized } from '../../lib/db';
 import { Tenant } from '../../types/tenant';
 
 export default async function handler(req: Request) {
+  await ensureDatabaseInitialized();
   const url = new URL(req.url);
   const pathParts = url.pathname.split('/');
   const id = parseInt(pathParts[pathParts.length - 1]);
@@ -18,26 +19,33 @@ export default async function handler(req: Request) {
       const body = await req.json();
       const { tenant_name, account, tenant_owner, is_active } = body;
 
-      const result = await sql`
+      const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.POSTGRES_URL;
+      const result = sql`
         UPDATE tenants
         SET 
-          tenant_name = COALESCE(${tenant_name}, tenant_name),
-          account = COALESCE(${account}, account),
-          tenant_owner = COALESCE(${tenant_owner}, tenant_owner),
-          is_active = COALESCE(${is_active}, is_active),
-          updated_at = NOW()
+          tenant_name = ${tenant_name !== undefined ? tenant_name : sql.raw('tenant_name')},
+          account = ${account !== undefined ? account : sql.raw('account')},
+          tenant_owner = ${tenant_owner !== undefined ? tenant_owner : sql.raw('tenant_owner')},
+          is_active = ${is_active !== undefined ? (isDevelopment ? (is_active ? 1 : 0) : is_active) : sql.raw('is_active')},
+          updated_at = ${isDevelopment ? sql.raw("datetime('now')") : sql.raw('NOW()')}
         WHERE id = ${id}
-        RETURNING 
-          id,
-          tenant_name,
-          account,
-          tenant_owner,
-          is_active,
-          created_at::text,
-          updated_at::text
+        ${isDevelopment ? sql.raw('') : sql.raw('RETURNING id, tenant_name, account, tenant_owner, is_active, created_at::text, updated_at::text')}
       `;
+      
+      // For SQLite, get the updated row
+      let tenantRow: any;
+      if (isDevelopment) {
+        const selectResult = sql`
+          SELECT id, tenant_name, account, tenant_owner, is_active, created_at, updated_at
+          FROM tenants
+          WHERE id = ${id}
+        `;
+        tenantRow = selectResult.rows[0];
+      } else {
+        tenantRow = result.rows[0];
+      }
 
-      if (result.rows.length === 0) {
+      if (!tenantRow) {
         return new Response(JSON.stringify({ error: 'Tenant not found' }), {
           status: 404,
           headers: { 'Content-Type': 'application/json' },
@@ -45,13 +53,13 @@ export default async function handler(req: Request) {
       }
 
       const tenant: Tenant = {
-        id: result.rows[0].id,
-        tenant_name: result.rows[0].tenant_name,
-        account: result.rows[0].account,
-        tenant_owner: result.rows[0].tenant_owner,
-        is_active: result.rows[0].is_active,
-        created_at: result.rows[0].created_at,
-        updated_at: result.rows[0].updated_at,
+        id: tenantRow.id,
+        tenant_name: tenantRow.tenant_name,
+        account: tenantRow.account,
+        tenant_owner: tenantRow.tenant_owner,
+        is_active: tenantRow.is_active === 1 || tenantRow.is_active === true,
+        created_at: typeof tenantRow.created_at === 'string' ? tenantRow.created_at : new Date(tenantRow.created_at).toISOString(),
+        updated_at: typeof tenantRow.updated_at === 'string' ? tenantRow.updated_at : new Date(tenantRow.updated_at).toISOString(),
       };
 
       return new Response(JSON.stringify(tenant), {
@@ -69,18 +77,25 @@ export default async function handler(req: Request) {
 
   if (req.method === 'DELETE') {
     try {
-      const result = await sql`
-        DELETE FROM tenants
-        WHERE id = ${id}
-        RETURNING id
+      const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.POSTGRES_URL;
+      
+      // Check if tenant exists before deleting
+      const checkResult = sql`
+        SELECT id FROM tenants WHERE id = ${id}
       `;
-
-      if (result.rows.length === 0) {
+      
+      if (checkResult.rows.length === 0) {
         return new Response(JSON.stringify({ error: 'Tenant not found' }), {
           status: 404,
           headers: { 'Content-Type': 'application/json' },
         });
       }
+      
+      // Delete tenant
+      sql`
+        DELETE FROM tenants
+        WHERE id = ${id}
+      `;
 
       return new Response(JSON.stringify({ message: 'Tenant deleted successfully' }), {
         status: 200,

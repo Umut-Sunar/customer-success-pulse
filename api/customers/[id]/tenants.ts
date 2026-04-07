@@ -15,35 +15,21 @@ export default async function handler(req: Request) {
     const pathParts = url.pathname.split('/');
     const customerId = pathParts[pathParts.length - 2]; // Get customer ID from path
     
-    const customerName = url.searchParams.get('name');
-    const customerDomain = url.searchParams.get('domain');
-
-    if (!customerName && !customerDomain) {
-      return new Response(JSON.stringify({ error: 'Customer name or domain required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Match tenants where account equals customer name or domain
-    const result = await sql`
+    // Get tenants from customer_tenant_mapping table
+    const result = sql`
       SELECT 
-        id,
-        tenant_name,
-        account,
-        tenant_owner,
-        is_active,
-        created_at::text,
-        updated_at::text
-      FROM tenants
-      WHERE is_active = true
-      AND (
-        account = ${customerName || ''}
-        OR account = ${customerDomain || ''}
-        OR LOWER(account) = LOWER(${customerName || ''})
-        OR LOWER(account) = LOWER(${customerDomain || ''})
-      )
-      ORDER BY tenant_name ASC
+        t.id,
+        t.tenant_name,
+        t.account,
+        t.tenant_owner,
+        t.is_active,
+        t.created_at,
+        t.updated_at
+      FROM customer_tenant_mapping ctm
+      INNER JOIN tenants t ON ctm.tenant_id = t.id
+      WHERE ctm.customer_id = ${customerId}
+      AND t.is_active = 1
+      ORDER BY t.tenant_name ASC
     `;
 
     const tenants: Tenant[] = result.rows.map((row) => ({
@@ -51,9 +37,9 @@ export default async function handler(req: Request) {
       tenant_name: row.tenant_name,
       account: row.account,
       tenant_owner: row.tenant_owner,
-      is_active: row.is_active,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
+      is_active: row.is_active === 1 || row.is_active === true,
+      created_at: typeof row.created_at === 'string' ? row.created_at : new Date(row.created_at).toISOString(),
+      updated_at: typeof row.updated_at === 'string' ? row.updated_at : new Date(row.updated_at).toISOString(),
     }));
 
     return new Response(JSON.stringify(tenants), {
@@ -68,4 +54,3 @@ export default async function handler(req: Request) {
     });
   }
 }
-

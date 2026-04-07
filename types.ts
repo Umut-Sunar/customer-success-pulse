@@ -28,7 +28,7 @@ export interface ActiveDetails {
   techIssues: string[]; // List of current technical blockers
 }
 
-import { Tenant } from './tenant';
+import { Tenant } from './types/tenant';
 
 export interface Customer {
   id: string;

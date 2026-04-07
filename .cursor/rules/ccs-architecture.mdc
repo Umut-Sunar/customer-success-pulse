@@ -1,0 +1,113 @@
+---
+description: CCS Intelligence Dashboard mimari rehberi — tech stack, modül yapısı, navigation, iterasyon planı
+alwaysApply: true
+---
+
+# CCS Intelligence Dashboard — Mimari
+
+## Proje Bağlamı
+
+Mevcut **Customer Success Pulse** uygulaması üzerine inşa edilen Meeting Intelligence, PM Performance ve Sales Pipeline platformu.
+
+## Tech Stack
+
+```
+Frontend:   React 19 + TypeScript + Vite
+UI:         Tailwind CSS + Lucide React
+Charts:     Recharts
+Auth:       Clerk (email domain: alo-tech.com / callcenterstudio.com)
+Backend:    Vercel Serverless Functions
+Database:   SQLite (dev) / Vercel Postgres (prod)
+State:      Zustand (dataStore)
+CSV:        PapaParse
+Deploy:     Vercel
+```
+
+## Veri Kaynakları
+
+| Kaynak | Nasıl Alınır |
+|--------|--------------|
+| `meetings_master` | Google Sheets CSV export |
+| `pm_scores` | Google Sheets CSV export |
+| `customer_insights` | Google Sheets CSV export |
+| `risk_signals` | Google Sheets CSV export |
+| `knowledge_management` | Google Sheets CSV export |
+| `Sales_Orders` (Pipeline) | Zoho CRM CSV export |
+| `Sales_Orders_2` (Live) | Zoho CRM CSV export |
+| Tenant verisi | Mevcut SQLite/Postgres DB |
+
+## Modül Yapısı
+
+```
+src/
+├── components/
+│   ├── admin/                    # Mevcut — DOKUNMA
+│   ├── meeting-intelligence/     # YENİ
+│   │   ├── MeetingOverview.tsx
+│   │   ├── PMPerformance.tsx
+│   │   ├── CustomerIntelligence.tsx
+│   │   ├── RiskDashboard.tsx
+│   │   └── KnowledgeBase.tsx
+│   ├── sales/                    # YENİ
+│   │   ├── SalesOrders.tsx
+│   │   └── PipelineKanban.tsx
+│   ├── shared/                   # YENİ
+│   │   ├── DataUploadModal.tsx
+│   │   ├── MetricCard.tsx
+│   │   ├── RiskBadge.tsx
+│   │   └── EmptyState.tsx
+│   ├── CustomerDetail.tsx        # Mevcut — sadece İter 7'de genişlet
+│   ├── CustomerTable.tsx         # Mevcut — DOKUNMA
+│   ├── DashboardOverview.tsx     # Mevcut — sadece İter 7'de genişlet
+│   └── SignIn.tsx                # Mevcut — DOKUNMA
+├── hooks/
+│   ├── useAdminAccess.ts         # Mevcut — DOKUNMA
+│   ├── useEmailDomainCheck.ts    # Mevcut — DOKUNMA
+│   ├── useMeetingData.ts         # YENİ
+│   └── useSalesData.ts           # YENİ
+├── lib/
+│   ├── db.ts                     # Mevcut — DOKUNMA
+│   ├── csv-parser.ts             # Mevcut — sadece ekleme yapılabilir
+│   └── meeting-parsers.ts        # YENİ
+├── store/
+│   └── dataStore.ts              # YENİ — Zustand global state
+├── types/
+│   ├── tenant.ts                 # Mevcut
+│   ├── meeting.types.ts          # YENİ
+│   └── sales.types.ts            # YENİ
+└── App.tsx                       # Mevcut — navigation genişletilecek
+```
+
+## Navigation Yapısı
+
+```
+Sidebar
+├── Dashboard          (mevcut DashboardOverview)
+├── Accounts           (mevcut CustomerTable)
+├── Meeting Intel      (YENİ — 5 alt sekme)
+│   ├── Overview
+│   ├── PM Performance
+│   ├── Customer Intelligence
+│   ├── Risk & Churn
+│   └── Knowledge Base
+├── Sales Orders       (YENİ)
+└── Admin              (mevcut — DOKUNMA)
+```
+
+## İterasyon Planı
+
+| # | Modül | Prompt Dosyası |
+|---|-------|----------------|
+| 1 | Types, Store, Parsers | `prompts/iterations/01_ITERATION_FOUNDATION.md` |
+| 2 | DataUploadModal + CSV pipeline | `prompts/iterations/02_ITERATION_DATA_UPLOAD.md` |
+| 3 | Meeting Overview & PM Performance | `prompts/iterations/03_ITERATION_MEETING_OVERVIEW.md` |
+| 4 | Customer Intelligence & Risk | `prompts/iterations/04_ITERATION_CUSTOMER_RISK.md` |
+| 5–8 | Knowledge Base, Sales, Dashboard, Deploy | `prompts/iterations/05_08_ITERATIONS_REMAINING.md` |
+
+## Kritik Kurallar
+
+1. **Mevcut kodu kırma** — CustomerTable, DashboardOverview, Admin, Auth dokunulmaz
+2. **JSON parse her zaman try/catch içinde** — `safeParseJSON()` kullan
+3. **Empty state her component'ta zorunlu** — Veri yokken "Upload data to get started" göster
+4. **Tüm sayısal değerler null-safe** — `value ?? 0` pattern kullan
+5. **Clerk auth korunur** — Her yeni route protected olmalı

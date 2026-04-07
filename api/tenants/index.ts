@@ -5,15 +5,17 @@ export default async function handler(req: Request) {
   await ensureDatabaseInitialized();
   if (req.method === 'GET') {
     try {
-      const result = await sql`
+      // Handle both SQLite and Postgres
+      const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.POSTGRES_URL;
+      const result = sql`
         SELECT 
           id,
           tenant_name,
           account,
           tenant_owner,
           is_active,
-          created_at::text,
-          updated_at::text
+          ${isDevelopment ? sql.raw('created_at') : sql.raw('created_at::text')},
+          ${isDevelopment ? sql.raw('updated_at') : sql.raw('updated_at::text')}
         FROM tenants
         ORDER BY created_at DESC
       `;
@@ -23,9 +25,9 @@ export default async function handler(req: Request) {
         tenant_name: row.tenant_name,
         account: row.account,
         tenant_owner: row.tenant_owner,
-        is_active: row.is_active,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
+        is_active: row.is_active === 1 || row.is_active === true,
+        created_at: typeof row.created_at === 'string' ? row.created_at : new Date(row.created_at).toISOString(),
+        updated_at: typeof row.updated_at === 'string' ? row.updated_at : new Date(row.updated_at).toISOString(),
       }));
 
       return new Response(JSON.stringify(tenants), {
@@ -53,27 +55,35 @@ export default async function handler(req: Request) {
         });
       }
 
-      const result = await sql`
+      const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.POSTGRES_URL;
+      const result = sql`
         INSERT INTO tenants (tenant_name, account, tenant_owner, is_active)
-        VALUES (${tenant_name}, ${account}, ${tenant_owner || null}, ${is_active})
-        RETURNING 
-          id,
-          tenant_name,
-          account,
-          tenant_owner,
-          is_active,
-          created_at::text,
-          updated_at::text
+        VALUES (${tenant_name}, ${account}, ${tenant_owner || null}, ${isDevelopment ? (is_active ? 1 : 0) : is_active})
+        ${isDevelopment ? sql.raw('') : sql.raw('RETURNING id, tenant_name, account, tenant_owner, is_active, created_at::text, updated_at::text')}
       `;
+      
+      // For SQLite, get the inserted row
+      let tenantRow: any;
+      if (isDevelopment) {
+        const tenantId = result.rows[0]?.id || (result as any).lastInsertRowid;
+        const selectResult = sql`
+          SELECT id, tenant_name, account, tenant_owner, is_active, created_at, updated_at
+          FROM tenants
+          WHERE id = ${tenantId}
+        `;
+        tenantRow = selectResult.rows[0];
+      } else {
+        tenantRow = result.rows[0];
+      }
 
       const tenant: Tenant = {
-        id: result.rows[0].id,
-        tenant_name: result.rows[0].tenant_name,
-        account: result.rows[0].account,
-        tenant_owner: result.rows[0].tenant_owner,
-        is_active: result.rows[0].is_active,
-        created_at: result.rows[0].created_at,
-        updated_at: result.rows[0].updated_at,
+        id: tenantRow.id,
+        tenant_name: tenantRow.tenant_name,
+        account: tenantRow.account,
+        tenant_owner: tenantRow.tenant_owner,
+        is_active: tenantRow.is_active === 1 || tenantRow.is_active === true,
+        created_at: typeof tenantRow.created_at === 'string' ? tenantRow.created_at : new Date(tenantRow.created_at).toISOString(),
+        updated_at: typeof tenantRow.updated_at === 'string' ? tenantRow.updated_at : new Date(tenantRow.updated_at).toISOString(),
       };
 
       return new Response(JSON.stringify(tenant), {
